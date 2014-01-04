@@ -1,0 +1,87 @@
+#!/bin/sh
+#
+# /etc/rc.d/rc.openvpn - script to start/stop openvpn clients
+# Use ALIAS and CONFIG_FILE arrays in /etc/rc.d/rc.openvpn.conf to specify 
+# details. Alias "all" will start all clients specified in rc.openvpn.conf or 
+# stop all running clients.
+#
+# 2011 by Oliver Kindernay
+
+. /etc/rc.d/rc.openvpn.conf
+
+OPENVPN=/usr/sbin/openvpn
+PID_PATH=/var/run
+USER=nobody
+GROUP=nobody
+
+action() 
+{
+    if [ $2 == "all" ]; then
+        i=0
+        while [ $i -lt ${#CONFIG_FILE[@]} ]
+        do 
+            if [ -n ${ALIAS[$i]} ];then
+                CUR_ALIAS=${ALIAS[$i]}
+            else
+                CUR_ALIAS="openvpn_$i"
+            fi
+
+            if [ $1 == "start" ];then
+                start_by_index $i $CUR_ALIAS
+            elif [ $1 == "stop" ];then
+                stop_by_alias $CUR_ALIAS
+            fi
+            i=$(($i+1))
+        done
+    else
+        i=0
+        while [ $i -lt ${#CONFIG_FILE[@]} ]
+        do 
+            [ ${ALIAS[$i]} == $2 ] && break;
+            i=$(($i+1))
+        done
+
+        if [ $1 == "start" ];then
+            start_by_index $i ${ALIAS[$i]}
+        elif [ $1 == "stop" ];then
+            stop_by_alias ${ALIAS[$i]}
+        fi
+    fi
+}
+
+start_by_index()
+{
+    echo -n "Starting $2 ... "
+    if $OPENVPN --daemon "$2" --config "${CONFIG_FILE[$1]}" --writepid  \
+        "$PID_PATH/$2" --user $USER --group $GROUP;then
+        echo "$2"
+    else
+        echo "FAILED"
+    fi
+}
+
+stop_by_alias()
+{
+    echo -n "Stopping $1 ..."
+    if [ ! -e "$PID_PATH/$1" ];then
+        echo "not running"
+        return 1
+    fi
+
+    PID=`cat "$PID_PATH/$1"`
+    kill $PID 
+    while ps -eo pid|grep -q $PID;do
+        echo -n .
+        sleep 1
+    done
+    rm -f "$PID_PATH/$1"
+    echo "$PID killed"
+    return 0
+}
+
+if [ -z $1 ] || [ -z $2 ];then
+    echo "Usage: $0 {start|stop} alias"
+    exit 1
+fi
+
+action $1 $2

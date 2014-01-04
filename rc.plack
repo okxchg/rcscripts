@@ -1,0 +1,96 @@
+#!/bin/bash
+
+. /etc/init.d/plack.conf
+
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+PLACKUP=/usr/bin/plackup
+PID_PREF=plack
+
+set -e
+
+function start_all()
+{
+    i=0;
+    while [ $i -lt ${#ALIAS[@]} ]
+    do
+        start_by_index $i
+        i=$(($i+1))
+    done
+}
+
+function stop_all()
+{
+    for pid_file in /var/run/${PID_PREF}_*;do
+        stop_by_pidfile $pid_file
+    done
+}
+
+function start_by_alias()
+{
+    i=0
+    while [ $i -lt ${#ALIAS[@]} ]
+    do 
+        [ "${ALIAS[$i]}" == "$1" ] && break;
+        i=$(($i+1))
+    done
+    start_by_index $i
+}
+
+function stop_by_pidfile()
+{
+    if [ ! -r "$1" ];then
+        echo "Invalid pidfile $1"
+        return 1
+    fi
+
+    PID=`cat $1`
+    NAME=`basename $1`
+    echo -n "Stopping $NAME ($PID) ..."
+    kill $PID
+    while ps -eo pid|grep -q $PID;do
+        echo -n .
+        sleep 1
+    done
+    rm "$1"
+    echo "OK"
+    logger -t plack "Plack $NAME stoped."
+}
+
+function start_by_index()
+{
+    echo -n "Starting plack for ${ALIAS[$1]} ... "
+
+    $PLACKUP --user ${USER[$1]} --group ${GROUP[$1]} \
+    --pid "/var/run/${PID_PREF}_${ALIAS[$1]}" -s ${SERVER[$i]} --host ${HOST[$1]} --port ${PORT[$1]} \
+    --workers ${WORKERS[$1]} -E ${ENVIRONMENT[$1]} -D ${APP[$1]}
+
+    if [ -f /var/run/${PID_PREF}_${ALIAS[$1]} ];then
+        echo "OK"
+        logger -t plack "Server for ${ALIAS[$1]} started on ${HOST[$1]}:${PORT[$1]}"
+    else
+        echo "FAILED"
+    fi
+}
+
+case "$1" in
+start)
+    if [ -z $2 ];then
+        start_all;
+    else
+        start_by_alias $2
+    fi
+    ;;
+stop)
+    if [ -z $2 ];then
+        stop_all;
+    else 
+        stop_by_pidfile "/var/run/${PID_PREF}_$2"
+    fi
+    ;;
+*)
+    echo "Usage: $0 {start|stop} [alias]"
+    exit 1
+;;
+esac
+exit 0
+
